@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Moderação de avaliações | DJ Gabriel</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { min-height: 100vh; padding: 40px 20px; background: var(--bg); color: var(--text); }
+    .moderation { max-width: 850px; margin: 0 auto; }
+    .moderation h1 { font-family: 'Playfair Display', serif; margin-bottom: 10px; }
+    .moderation p { color: var(--muted); line-height: 1.6; }
+    .admin-login, .pending-card { margin-top: 22px; padding: 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+    .admin-login input { width: 100%; padding: 14px; margin: 10px 0 15px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; }
+    .pending-card h2 { font-size: 18px; margin: 8px 0; }
+    .pending-card .stars { color: var(--gold); letter-spacing: 3px; }
+    .pending-card blockquote { margin: 12px 0; padding-left: 14px; border-left: 2px solid var(--gold); line-height: 1.7; overflow-wrap: anywhere; }
+    .admin-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    .admin-actions button { padding: 10px 16px; border-radius: 6px; border: 1px solid var(--line); cursor: pointer; }
+    .approve { background: var(--gold); color: #17130d; }
+    .reject { background: transparent; color: var(--text); }
+    #adminStatus { margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <main class="moderation">
+    <a class="underlined-link" href="/">← Voltar ao site</a>
+    <h1>Moderação de avaliações</h1>
+    <p>Entre com a senha administrativa para revisar as avaliações recebidas. Somente as aprovadas aparecem no site.</p>
+    <form class="admin-login" id="loginForm">
+      <label for="adminPassword">Senha administrativa</label>
+      <input id="adminPassword" type="password" autocomplete="current-password" required>
+      <button class="button button-gold" type="submit">Entrar</button>
+    </form>
+    <p id="adminStatus" role="status" aria-live="polite"></p>
+    <section id="pendingList" aria-live="polite"></section>
+  </main>
+  <script>
+    let adminPassword = "";
+    const statusEl = document.getElementById("adminStatus");
+    const listEl = document.getElementById("pendingList");
+    async function api(path, options = {}) {
+      const response = await fetch(path, {
+        ...options,
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${adminPassword}`, ...(options.headers || {}) }
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Erro na solicitação.");
+      return data;
+    }
+    function showReviews(reviews) {
+      listEl.replaceChildren();
+      if (!reviews.length) {
+        const p = document.createElement("p"); p.textContent = "Nenhuma avaliação aguardando aprovação."; listEl.appendChild(p); return;
+      }
+      reviews.forEach(review => {
+        const card = document.createElement("article"); card.className = "pending-card";
+        const title = document.createElement("h2"); title.textContent = review.name;
+        const stars = document.createElement("div"); stars.className = "stars"; stars.textContent = "★".repeat(review.rating) + "☆".repeat(5-review.rating);
+        const message = document.createElement("blockquote"); message.textContent = review.message;
+        const date = document.createElement("small"); date.textContent = new Date(review.created_at).toLocaleString("pt-BR");
+        const actions = document.createElement("div"); actions.className = "admin-actions";
+        const approve = document.createElement("button"); approve.className = "approve"; approve.textContent = "Aprovar";
+        const reject = document.createElement("button"); reject.className = "reject"; reject.textContent = "Rejeitar";
+        approve.addEventListener("click", () => moderate(review.id, "approved"));
+        reject.addEventListener("click", () => moderate(review.id, "rejected"));
+        actions.append(approve, reject); card.append(title, stars, message, date, actions); listEl.appendChild(card);
+      });
+    }
+    async function loadPending() {
+      statusEl.textContent = "Carregando avaliações...";
+      try { const data = await api("/api/admin/reviews"); showReviews(data.reviews || []); statusEl.textContent = "Acesso autorizado."; }
+      catch (error) { statusEl.textContent = error.message; }
+    }
+    async function moderate(id, status) {
+      try {
+        await api("/api/admin/reviews", { method: "POST", body: JSON.stringify({ id, status }) });
+        statusEl.textContent = status === "approved" ? "Avaliação aprovada e publicada." : "Avaliação rejeitada.";
+        await loadPending();
+      } catch (error) { statusEl.textContent = error.message; }
+    }
+    document.getElementById("loginForm").addEventListener("submit", async event => {
+      event.preventDefault(); adminPassword = document.getElementById("adminPassword").value;
+      await loadPending();
+    });
+  </script>
+</body>
+</html>
